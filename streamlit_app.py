@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 
 from sklearn.linear_model import LogisticRegression
 
@@ -195,11 +194,7 @@ def main():
       .replace({"Discount?": {0: "No Discount", 1: "Had Discount"}})
   )
 
-  fig, ax = plt.subplots()
-  ax.bar(rates["Discount?"], rates["Cancelled"])
-  ax.set_ylabel("Cancellation rate")
-  ax.set_ylim(0, 1)
-  st.pyplot(fig)
+  st.bar_chart(rates.set_index("Discount?")["Cancelled"])
 
  
 
