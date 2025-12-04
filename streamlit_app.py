@@ -9,18 +9,20 @@ def load_data():
   history_path = "data/maven_music_listening_history.xlsx"
 
   customers = pd.read_csv(customers_path)
-  history = pd.read_excel(history_path)
+  history = pd.read_excel(history_path,sheet_name=0)
+  audio = pd.read_excel(history_path,sheet_name=1)
 
-  return customers, history
+  return customers, history, audio
 
 
-def build_features(customers,history):
+def build_features(customers,history, audio):
   customers = customers.copy()
 
   #convert dates 
   customers['Member Since'] = pd.to_datetime(customers['Member Since'])
   customers["Cancellation Date"] = pd.to_datetime(customers["Cancellation Date"])
 
+  #cancelled flag
   customers["Cancelled"] = customers["Cancellation Date"].notna().astype(int)
 
   customers['Discount?'] = np.where(customers['Discount?'] == 'Yes', 1, 0)
@@ -35,13 +37,53 @@ def build_features(customers,history):
   #merge into customers
   customers = customers.merge(sessions_per_customer,how='left',on='Customer ID')
 
+  #audio
+  audio = audio.copy()
+  audio['Genre'] = np.where(audio['Genre'] == 'Pop Music',"Pop",audio['Genre'])
+
+  audio_id_split = (
+        pd.DataFrame(audio["ID"].str.split("-").to_list())
+        .rename(columns={0: "Type", 1: "Audio ID"})
+    )
+  
+  audio_id_split["Audio ID"] = audio_id_split["Audio ID"].astype(int)
+
+  audio_all = pd.concat([audio_id_split, audio],axis=1)
+
+  #joining the history with audio info
+  df = history.merge(audio_all, how='left', on='Audio ID')
+
+  genres = (
+    pd.concat([df['Customer ID'],pd.get_dummies(df['Genre'],dtype='int')],axis=1)
+    .groupby('Customer ID')
+    .sum()
+    .reset_index()
+  )
+  
+  total_audio = (
+    history.groupby('Customer ID')['Audio ID']
+    .count()
+    .rename('Total Audio')
+    .reset_index()
+  )
+
+  df_audio = genres.merge(total_audio, how="left", on="Customer ID")
+
+  #Percent Pop
+  customers = customers.merge(df_audio,how='left',on='Customer ID')
+  customers["Percent Pop"] = customers["Pop"] / customers["Total Audio"] * 100
+
+  #podcasts 
+  comedy = customers.get("Comedy", 0)
+  true_crime = customers.get("True Crime", 0)
+  customers["Percent Podcasts"] = (comedy + true_crime) / customers["Total Audio"] * 100
+
 
   return customers
 
 
 def train_simple_model(model_df):
-    # Use Number of Sessions to predict Cancelled
-    X = model_df[["Number of Sessions"]]
+    X = model_df[["Number of Sessions", "Discount?", "Percent Pop", "Percent Podcasts"]]
     y = model_df["Cancelled"]
 
     model = LogisticRegression()
@@ -58,7 +100,7 @@ def main():
   st.subheader('Raw data preview')
 
   #loading the data
-  customers, history = load_data()
+  customers, history, audio = load_data()
 
   st.write('Customers:')
   st.dataframe(customers.head())
@@ -67,7 +109,7 @@ def main():
   st.dataframe(history.head())
 
   #build the features
-  customers_features = build_features(customers, history)
+  customers_features = build_features(customers, history, audio)
 
   st.subheader('Customers with engineered features')
   st.dataframe(customers_features.head())
@@ -79,7 +121,7 @@ def main():
 
 
   #building the model df
-  model_df = customers_features[['Customer ID','Cancelled','Discount?','Number of Sessions']].dropna()
+  model_df = customers_features[['Customer ID','Cancelled','Discount?','Number of Sessions','Percent Pop','Percent Podcasts']].dropna()
 
   st.subheader('Modeling Data (sample)')
   st.dataframe(model_df.head())
