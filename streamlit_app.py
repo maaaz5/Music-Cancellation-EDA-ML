@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 
 from sklearn.linear_model import LogisticRegression
 
@@ -83,6 +84,7 @@ def build_features(customers,history, audio):
 
 
 def train_simple_model(model_df):
+    # Use multiple features to predict Cancelled
     X = model_df[["Number of Sessions", "Discount?", "Percent Pop", "Percent Podcasts"]]
     y = model_df["Cancelled"]
 
@@ -129,26 +131,75 @@ def main():
   #training the model
   model = train_simple_model(model_df)
 
-  st.subheader('Try as simple prediction')
+  st.subheader('Tty a predection')
 
-  #widgets
-  min_sessions = int(model_df['Number of Sessions'].min())
-  max_sessions = int(model_df['Number of Sessions'].max())
-  default_sessions = int(model_df['Number of Sessions'].mean())
+  col1, col2 = st.columns(2)
 
-  chosen_sessions = st.slider('Number of sessions in last 3 months',
-  min_value=min_sessions,
-  max_value=max_sessions,
-  value=default_sessions)
+  with col1:
+    discount_str = st.selectbox(
+      'Did the customer receive a discount?',
+      ['No','Yes']
+    )
 
-  if st.button('Predict the cancellation probability'):
-    X_new = pd.DataFrame({'Number of Sessions': [chosen_sessions]})
+    #widgets
+    min_sessions = int(model_df['Number of Sessions'].min())
+    max_sessions = int(model_df['Number of Sessions'].max())
+    default_sessions = int(model_df['Number of Sessions'].mean())
+
+    chosen_sessions = st.slider(
+            "Number of sessions in last 3 months",
+            min_value=min_sessions,
+            max_value=max_sessions,
+            value=default_sessions,
+        )
+
+  with col2:
+    pop_default = int(model_df['Percent Pop'].median())
+    podcasts_default = int(model_df['Percent Podcasts'].median())
+
+    chosen_pop = st.slider(
+      'Percent of listening that is Pop Music (%)',
+      min_value=0,
+      max_value=100,
+      value=pop_default,
+    )
+
+    chosen_podcasts = st.slider(
+      'Percent of listening that is Podcasts (%)',
+      min_value=0,
+      max_value=100,
+      value=podcasts_default,
+    )
+
+  if st.button('Precict the cancellation probability'):
+    discount_val = 1 if discount_str == 'Yes' else 0
+
+    X_new = pd.DataFrame(
+      {
+        "Number of Sessions":[chosen_sessions],
+        "Discount?":[discount_val],
+        "Percent Pop":[chosen_pop],
+        "Percent Podcasts":[chosen_podcasts]
+      }
+    )
     prob_cancel = model.predict_proba(X_new)[0][1]
 
     st.write(f"Predicted probability of cancellation: {prob_cancel:.2%}")
 
+  st.subheader("Cancellation rate by discount")
 
+  rates = (
+      model_df.groupby("Discount?")["Cancelled"]
+      .mean()
+      .reset_index()
+      .replace({"Discount?": {0: "No Discount", 1: "Had Discount"}})
+  )
 
+  fig, ax = plt.subplots()
+  ax.bar(rates["Discount?"], rates["Cancelled"])
+  ax.set_ylabel("Cancellation rate")
+  ax.set_ylim(0, 1)
+  st.pyplot(fig)
 
  
 
